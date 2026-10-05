@@ -247,7 +247,6 @@ import {
   ToolRuntimeSupervisorError,
 } from "./tool-runtime-supervisor.js";
 import { listConnectionLifecycleEvents } from "./tool-connection-activity.js";
-import { isLoopbackHost } from "../url-utils.js";
 import { isRetiredComposioConnection, RETIRED_COMPOSIO_MESSAGE } from "@paperclipai/shared";
 import {
   appWithPaperclipCloudConnectorAvailability,
@@ -440,13 +439,7 @@ export async function resolveOAuthClientIdMetadataDocumentUrl(
   try {
     const parsed = new URL(redirectUri);
     if (parsed.protocol !== "https:") return null;
-    const hostname = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
-    const isLoopback =
-      hostname === "localhost" ||
-      hostname.endsWith(".localhost") ||
-      hostname === "::1" ||
-      /^127(?:\.\d{1,3}){3}$/.test(hostname);
-    if (isLoopback) return null;
+    if (isOAuthLoopbackRedirectHostname(parsed.hostname)) return null;
     const metadataUrl = new URL(
       OAUTH_CLIENT_ID_METADATA_DOCUMENT_PATH,
       parsed.origin,
@@ -473,6 +466,22 @@ export async function resolveOAuthClientIdMetadataDocumentUrl(
 }
 
 /**
+ * Whether an OAuth callback hostname is loopback: `localhost`, a `.localhost`
+ * name, `::1`, or any 127.0.0.0/8 address. Redirect constraints, CIMD, and the
+ * registered client type use this one rule, so a callback that one check accepts
+ * as loopback is loopback for all of them.
+ */
+function isOAuthLoopbackRedirectHostname(hostname: string): boolean {
+  const normalized = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  return (
+    normalized === "localhost" ||
+    normalized.endsWith(".localhost") ||
+    normalized === "::1" ||
+    /^127(?:\.\d{1,3}){3}$/.test(normalized)
+  );
+}
+
+/**
  * The RFC 7591 `application_type` for Paperclip's OAuth callback. OpenID Connect
  * Dynamic Client Registration 1.0 section 2 lets a `web` client use only https
  * redirect URIs, and lets a `native` client use an http loopback redirect URI
@@ -482,7 +491,9 @@ export async function resolveOAuthClientIdMetadataDocumentUrl(
  */
 export function oauthClientApplicationType(redirectUri: string): "web" | "native" {
   const url = new URL(redirectUri);
-  return url.protocol === "http:" && isLoopbackHost(url.hostname) ? "native" : "web";
+  return url.protocol === "http:" && isOAuthLoopbackRedirectHostname(url.hostname)
+    ? "native"
+    : "web";
 }
 
 /**
@@ -9223,15 +9234,10 @@ export function toolAccessService(
         code: "oauth_redirect_uri_invalid",
       });
     }
-    const hostname = redirect.hostname.replace(/^\[|\]$/g, "").toLowerCase();
-    const isLoopback =
-      hostname === "localhost" ||
-      hostname.endsWith(".localhost") ||
-      hostname === "::1" ||
-      /^127(?:\.\d{1,3}){3}$/.test(hostname);
     if (
       redirect.protocol === "https:" ||
-      (redirect.protocol === "http:" && isLoopback)
+      (redirect.protocol === "http:" &&
+        isOAuthLoopbackRedirectHostname(redirect.hostname))
     )
       return;
     throw unprocessable(

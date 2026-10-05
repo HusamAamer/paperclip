@@ -882,6 +882,9 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     expect(oauthClientApplicationType(REDIRECT_URI)).toBe("web");
     expect(oauthClientApplicationType("http://localhost:3100/api/tools/oauth/callback")).toBe("native");
     expect(oauthClientApplicationType("http://[::1]:3100/api/tools/oauth/callback")).toBe("native");
+    // Every loopback form the redirect constraint check accepts is native too.
+    expect(oauthClientApplicationType("http://127.0.0.2:3100/api/tools/oauth/callback")).toBe("native");
+    expect(oauthClientApplicationType("http://dev.localhost:3100/api/tools/oauth/callback")).toBe("native");
     // A LAN or tailnet host over http is not loopback, so native rules do not apply.
     expect(oauthClientApplicationType("http://192.168.1.20:3100/api/tools/oauth/callback")).toBe("web");
   });
